@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Transfer with Progress</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 50px;
+            text-align: center;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .upload, .download, .file-list {
+            margin: 20px 0;
+        }
+        input[type="file"], input[type="text"], button {
+            padding: 10px;
+            margin: 10px 0;
+            width: 100%;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .message {
+            margin-top: 20px;
+            color: red;
+        }
+        .file-list {
+            max-height: 200px;
+            overflow-y: auto;
+            text-align: left;
+        }
+        .file-item {
+            cursor: pointer;
+            margin: 5px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+        .file-item:hover {
+            background-color: #f0f0f0;
+        }
+        .progress-bar {
+            width: 100%;
+            background-color: #f3f3f3;
+            border: 1px solid #ccc;
+            margin-top: 10px;
+        }
+        .progress {
+            height: 20px;
+            background-color: #4CAF50;
+            width: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>File Transfer with Progress</h1>
+
+        <!-- Upload Section -->
+        <div class="upload">
+            <h3>Upload files</h3>
+            <!-- Enable multiple file selection -->
+            <input type="file" id="uploadFiles" multiple />
+            <button onclick="uploadFiles()">Upload</button>
+            <div class="progress-bar">
+                <div class="progress" id="uploadProgress"></div>
+            </div>
+            <p class="message" id="uploadMessage"></p>
+        </div>
+
+        <!-- Download Section -->
+        <div class="download">
+            <h3>Download a file</h3>
+            <input type="text" id="downloadFileName" placeholder="Enter file name" />
+            <button onclick="downloadFile()">Download</button>
+            <div class="progress-bar">
+                <div class="progress" id="downloadProgress"></div>
+            </div>
+            <p class="message" id="downloadMessage"></p>
+        </div>
+
+        <!-- File List Section -->
+        <div class="file-list">
+            <h3>Available Files in Uploads</h3>
+            <div id="fileList"></div>
+        </div>
+    </div>
+
+    <script>
+        // Fetch and display the list of files in the uploads directory
+        function fetchFileList() {
+            fetch('/files')
+                .then(response => response.json())
+                .then(files => {
+                    const fileListDiv = document.getElementById('fileList');
+                    fileListDiv.innerHTML = ''; // Clear any previous files
+
+                    if (files.length === 0) {
+                        fileListDiv.innerHTML = '<p>No files found.</p>';
+                    } else {
+                        files.forEach(file => {
+                            const fileItem = document.createElement('div');
+                            fileItem.className = 'file-item';
+                            fileItem.textContent = file;
+
+                            // Add click event to copy file name to download input
+                            fileItem.addEventListener('click', () => {
+                                document.getElementById('downloadFileName').value = file;
+                            });
+
+                            fileListDiv.appendChild(fileItem);
+                        });
+                    }
+                })
+                .catch(error => console.error('Error fetching file list:', error));
+        }
+
+        // Call fetchFileList when the page loads
+        window.onload = fetchFileList;
+
+        // Upload files function with progress tracking
+        function uploadFiles() {
+            const uploadMessage = document.getElementById('uploadMessage');
+            const uploadProgress = document.getElementById('uploadProgress');
+            const fileInput = document.getElementById('uploadFiles');
+            const files = fileInput.files;
+
+            if (files.length === 0) {
+                uploadMessage.innerText = 'Please select files to upload.';
+                return;
+            }
+
+            const formData = new FormData();
+
+            // Append each file to the form data
+            for (let i = 0; i < files.length; i++) {
+                formData.append('files', files[i]);
+            }
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload', true);
+
+            // Track upload progress
+            xhr.upload.onprogress = function(event) {
+                if (event.lengthComputable) {
+                    const percentComplete = (event.loaded / event.total) * 100;
+                    uploadProgress.style.width = percentComplete + '%';
+                }
+            };
+
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    uploadMessage.innerText = 'Files uploaded successfully';
+                    uploadProgress.style.width = '0%'; // Reset progress bar
+                    fetchFileList(); // Refresh file list after upload
+                } else {
+                    uploadMessage.innerText = 'Error uploading files';
+                    uploadProgress.style.width = '0%'; // Reset progress bar
+                }
+            };
+
+            xhr.send(formData);
+        }
+
+        // Download file function with progress tracking
+        function downloadFile() {
+            const downloadMessage = document.getElementById('downloadMessage');
+            const downloadProgress = document.getElementById('downloadProgress');
+            const fileName = document.getElementById('downloadFileName').value;
+
+            if (!fileName) {
+                downloadMessage.innerText = 'Please enter a file name to download.';
+                return;
+            }
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', `/download/${fileName}`, true);
+            xhr.responseType = 'blob'; // Ensure file is treated as binary
+
+            // Track download progress
+            xhr.onprogress = function(event) {
+                if (event.lengthComputable) {
+                    const percentComplete = (event.loaded / event.total) * 100;
+                    downloadProgress.style.width = percentComplete + '%';
+                }
+            };
+
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    const blob = xhr.response;
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    downloadProgress.style.width = '0%'; // Reset progress bar
+                    downloadMessage.innerText = 'Download complete';
+                } else if (xhr.status === 404) {
+                    downloadMessage.innerText = 'File not found';
+                    downloadProgress.style.width = '0%'; // Reset progress bar
+                } else {
+                    downloadMessage.innerText = 'Error downloading file';
+                    downloadProgress.style.width = '0%'; // Reset progress bar
+                }
+            };
+
+            xhr.send();
+        }
+    </script>
+</body>
+</html>
